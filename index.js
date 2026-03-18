@@ -1,10 +1,34 @@
+import dotenv from "dotenv";
+dotenv.config();
+
 
 import express from "express";
-import dotenv from "dotenv";
+
+
 import mongoose from "mongoose";
 import cors from "cors";
+import { startDueDateCron } from './utils/cronJobs.js';
+import adminRoutes from "./routes/adminRoutes.js";
+import customerRoutes from "./routes/customerRoutes.js";
+import jobRoutes from "./routes/jobRoutes.js";
+import profileRoutes from "./routes/profileRoutes.js";
+import orderRoutes from './routes/orderRoutes.js';
+import expenseRoutes from "./routes/expenseRoutes.js";
+import paymentRoutes from "./routes/paymentRoutes.js";
+import adminExpenseRoutes from "./routes/adminExpenseRoutes.js";
+import adminPaymentRoutes from "./routes/adminPaymentRoutes.js";
+import laborRoutes from "./routes/laborRoutes.js"; 
+import attendanceRoutes from "./routes/attendanceRoutes.js";
+import roleRoutes from './routes/roleRoutes.js';
+import adminMaterialRoutes from './routes/adminMaterial.js'; // Add this line
 
-dotenv.config();
+// ✅ Fix 1: Sahi path se import karein
+import quotationCustomerRoutes from './routes/quotationCustomer.js';
+import workerPaymentRoutes from './routes/workerPayment.js';
+import quotationMaterialRoutes from './routes/quotationMaterial.js';
+
+// ✅ Quotation Routes
+import quotationRoutes from './routes/quotation.js';  // routes folder se import
 
 const app = express();
 
@@ -12,158 +36,51 @@ const app = express();
 app.use(express.json());
 app.use(cors({ origin: process.env.CLIENT_URL, credentials: true }));
 
-// =============================
-// MongoDB Connection
-// =============================
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ MongoDB Connected"))
-  .catch((err) => console.log("❌ DB Error:", err.message));
+// Serve uploads folder
+app.use("/uploads", express.static("uploads"));
 
-// =============================
-// Test Route
-// =============================
+// Routes
+app.use("/api/admin", adminRoutes);
+app.use("/api/customers", customerRoutes);
+app.use("/api/jobs", jobRoutes);
+app.use("/api/profile", profileRoutes);
+app.use('/api/orders', orderRoutes);
+app.use("/api/expenses", expenseRoutes);
+app.use("/api/payments", paymentRoutes);
+app.use("/api/admin/expenses", adminExpenseRoutes);
+app.use("/api/admin/payments", adminPaymentRoutes);
+app.use('/api/labor', laborRoutes);  
+app.use("/api/attendance", attendanceRoutes);  
+app.use('/api/roles', roleRoutes);
+app.use('/api/quotation-materials', quotationMaterialRoutes);
+app.use('/api/quotations', quotationRoutes);
+// Use routes
+app.use('/api/admin/materials', adminMaterialRoutes); // Add this line
+    startDueDateCron();
+// ✅ Fix 2: app.use() use karein, router.use() nahi
+app.use('/api/quotation-customers', quotationCustomerRoutes);
+app.use('/api/worker-payment', workerPaymentRoutes);  // Worker payment routes
+console.log("EMAIL:", process.env.EMAIL_USER);
+console.log("PASS:", process.env.EMAIL_PASS);
+// Test route
 app.get("/", (req, res) => {
-  res.send("🔥 Backend running successfully");
+  res.send("🔥 Backend running");
 });
 
-// =============================
-// ADMIN ROUTES
-// =============================
-app.post("/api/admin/signup", async (req, res) => {
+// MongoDB Connection
+const connectDB = async () => {
   try {
-    res.json({ message: "Admin signup working" });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    await mongoose.connect(process.env.MONGO_URI);
+    console.log("✅ MongoDB Connected");
+  } catch (err) {
+    console.log("❌ DB Connection Error:", err.message);
+    process.exit(1);
   }
-});
+};
 
-app.post("/api/admin/login", async (req, res) => {
-  try {
-    res.json({ message: "Admin login working" });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+connectDB();
 
-// =============================
-// CUSTOMER ROUTES
-// =============================
-app.get("/api/customers", async (req, res) => {
-  res.json({ message: "All customers route working" });
-});
 
-app.post("/api/customers", async (req, res) => {
-  res.json({ message: "Customer created" });
-});
-
-// =============================
-// JOB ROUTES
-// =============================
-app.get("/api/jobs", (req, res) => {
-  res.json({ message: "Jobs route working" });
-});
-
-app.post("/api/jobs", (req, res) => {
-  res.json({ message: "Job created" });
-});
-
-// =============================
-// PROFILE ROUTES
-// =============================
-app.get("/api/profile", (req, res) => {
-  res.json({ message: "Profile route working" });
-});
-
-// =============================
-// ORDER ROUTES
-// =============================
-app.get("/api/orders", (req, res) => {
-  res.json({ message: "Orders route working" });
-});
-
-app.post("/api/orders", (req, res) => {
-  res.json({ message: "Order created" });
-});
-
-// =============================
-// EXPENSE ROUTES
-// =============================
-app.get("/api/expenses", (req, res) => {
-  res.json({ message: "Expenses route working" });
-});
-
-app.post("/api/expenses", (req, res) => {
-  res.json({ message: "Expense added" });
-});
-
-// =============================
-// PAYMENT ROUTES
-// =============================
-app.get("/api/payments", (req, res) => {
-  res.json({ message: "Payments route working" });
-});
-
-app.post("/api/payments", (req, res) => {
-  res.json({ message: "Payment added" });
-});
-
-// =============================
-// ADMIN EXPENSE ROUTES
-// =============================
-app.get("/api/admin/expenses", (req, res) => {
-  res.json({ message: "Admin expenses route working" });
-});
-
-// =============================
-// ADMIN PAYMENT ROUTES
-// =============================
-app.get("/api/admin/payments", (req, res) => {
-  res.json({ message: "Admin payments route working" });
-});
-
-// =============================
-// LABOR ROUTES
-// =============================
-app.get("/api/labor", (req, res) => {
-  res.json({ message: "Labor route working" });
-});
-
-app.post("/api/labor", (req, res) => {
-  res.json({ message: "Labor added" });
-});
-
-// =============================
-// ATTENDANCE ROUTES
-// =============================
-app.get("/api/attendance", (req, res) => {
-  res.json({ message: "Attendance route working" });
-});
-
-app.post("/api/attendance", (req, res) => {
-  res.json({ message: "Attendance added" });
-});
-
-// =============================
-// ROLE ROUTES
-// =============================
-app.get("/api/roles", (req, res) => {
-  res.json({ message: "Roles route working" });
-});
-
-// =============================
-// WORKER PAYMENT ROUTES
-// =============================
-app.get("/api/worker-payment", (req, res) => {
-  res.json({ message: "Worker payment route working" });
-});
-
-app.post("/api/worker-payment", (req, res) => {
-  res.json({ message: "Worker payment added" });
-});
-
-// =============================
-// Export for Vercel
-// =============================
-export default app;
-
+// Start server
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));``

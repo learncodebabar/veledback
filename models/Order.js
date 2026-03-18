@@ -7,8 +7,6 @@ const orderSchema = new mongoose.Schema({
     ref: "Customer",
     required: true
   },
-  // No need for customerName, customerPhone, customerAddress fields
-  // You can get this info from the referenced Customer document
 
   // ========== Payment Details ==========
   finalTotal: {
@@ -31,7 +29,7 @@ const orderSchema = new mongoose.Schema({
     enum: ['pending', 'partial', 'paid'],
     default: 'pending'
   },
-     payments: [{
+  payments: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: "Payment"
   }],
@@ -46,6 +44,12 @@ const orderSchema = new mongoose.Schema({
     type: Date,
     required: true,
     default: Date.now
+  },
+  // ✅ NEW: Due Date field
+  dueDate: {
+    type: Date,
+    required: false, // Optional field
+    default: null
   },
   status: {
     type: String,
@@ -73,7 +77,6 @@ const orderSchema = new mongoose.Schema({
 });
 
 // ========== Pre-save Middleware ==========
-// FIXED: Remove 'next' parameter completely when using async/await
 orderSchema.pre('save', async function() {
   try {
     console.log("🔄 Order pre-save middleware running for:", this._id || 'new order');
@@ -98,13 +101,10 @@ orderSchema.pre('save', async function() {
     console.log("   Advance:", this.advancePayment);
     console.log("   Remaining:", this.remainingBalance);
     console.log("   Payment Status:", this.paymentStatus);
-    
-    // DON'T call next() - it's not needed and causes errors
-    // Just let the function complete naturally
+    console.log("   Due Date:", this.dueDate);
     
   } catch (error) {
     console.error("❌ Error in order pre-save middleware:", error);
-    // If you need to throw the error, just throw it
     throw error;
   }
 });
@@ -113,7 +113,7 @@ orderSchema.pre('save', async function() {
 orderSchema.post('save', function(doc) {
   console.log("📦 Order saved successfully:", doc._id);
   console.log("   Bill Number:", doc.billNumber);
-  // No next() needed here either
+  console.log("   Due Date:", doc.dueDate);
 });
 
 const Order = mongoose.model("Order", orderSchema);

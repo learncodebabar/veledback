@@ -5,16 +5,24 @@ import {
   getRoleById,
   updateRole,
   deleteRole,
-  roleLogin
+  sendOtp,
+  verifyOtpAndLogin,
+  resendOtp,
+  roleLogin  // ← یہ شامل کریں
 } from '../controllers/roleController.js';
 import { protect } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Public route for role login
-router.post('/login', roleLogin);
+// OTP Authentication Routes
+router.post('/send-otp', sendOtp);
+router.post('/verify-otp', verifyOtpAndLogin);
+router.post('/resend-otp', resendOtp);
 
-// Protected routes (require admin authentication)
+// Traditional login (backward compatibility)
+router.post('/login', roleLogin);  // ← اب یہ کام کرے گا
+
+// Protected routes (admin only)
 router.post('/', protect, createRole);
 router.get('/', protect, getAllRoles);
 router.get('/:id', protect, getRoleById);

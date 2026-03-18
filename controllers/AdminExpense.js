@@ -1,4 +1,4 @@
-import AdminExpense from "../models/AdminExpense.js";  // ✅ YEH SAHI HAI
+import AdminExpense from "../models/AdminExpense.js";
 
 // @desc    Get all expenses (with filters)
 // @route   GET /api/admin/expenses
@@ -64,12 +64,12 @@ export const getAllExpenses = async (req, res) => {
     const sort = {};
     sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
 
-    // ✅ AdminExpense use kar rahe hain
+    // ✅ FIXED: REMOVED .populate() completely
     const expenses = await AdminExpense.find(filter)
       .sort(sort)
       .skip(skip)
-      .limit(limitNum)
-      .populate('addedBy', 'name email');
+      .limit(limitNum);
+      // .populate('addedBy', 'name email'); // ❌ REMOVED - causing error
 
     // Get total count for pagination
     const total = await AdminExpense.countDocuments(filter);
@@ -146,7 +146,7 @@ export const createExpense = async (req, res) => {
       });
     }
 
-    if (!description) {
+    if (!description || !description.trim()) {
       return res.status(400).json({
         success: false,
         message: 'Description is required'
@@ -160,11 +160,11 @@ export const createExpense = async (req, res) => {
       });
     }
 
-    // ✅ AdminExpense use kar rahe hain
+    // Create expense
     const expense = await AdminExpense.create({
       amount: parseFloat(amount),
       category,
-      description,
+      description: description.trim(),
       date: date || new Date(),
       paymentMethod: paymentMethod || 'cash',
       status: status || 'paid',
@@ -185,6 +185,17 @@ export const createExpense = async (req, res) => {
     });
   } catch (error) {
     console.error('Error in createExpense:', error);
+    
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: messages
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: 'Server error while creating expense',
@@ -198,9 +209,9 @@ export const createExpense = async (req, res) => {
 // @access  Private/Admin
 export const getExpenseById = async (req, res) => {
   try {
-    // ✅ AdminExpense use kar rahe hain
-    const expense = await AdminExpense.findById(req.params.id)
-      .populate('addedBy', 'name email');
+    // ✅ FIXED: REMOVED .populate()
+    const expense = await AdminExpense.findById(req.params.id);
+    // .populate('addedBy', 'name email'); // ❌ REMOVED - causing error
 
     if (!expense) {
       return res.status(404).json({
@@ -215,6 +226,15 @@ export const getExpenseById = async (req, res) => {
     });
   } catch (error) {
     console.error('Error in getExpenseById:', error);
+    
+    // Handle invalid ID format
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid expense ID format'
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: 'Server error while fetching expense',
@@ -226,15 +246,12 @@ export const getExpenseById = async (req, res) => {
 // @desc    Update expense
 // @route   PUT /api/admin/expenses/:id
 // @access  Private/Admin
-// @desc    Update expense
-// @route   PUT /api/admin/expenses/:id
-// @access  Private/Admin
 export const updateExpense = async (req, res) => {
   try {
     console.log("📝 Update request for ID:", req.params.id);
     console.log("📦 Update data:", req.body);
     
-    // ✅ Find expense first
+    // Find expense first
     const expense = await AdminExpense.findById(req.params.id);
 
     if (!expense) {
@@ -245,18 +262,7 @@ export const updateExpense = async (req, res) => {
       });
     }
 
-    // ✅ Optional: Check if user has permission (remove if not needed)
-    // Agar aap chahte hain ki koi bhi logged in user update kar sake to ye check hata den
-    /*
-    if (!req.user || !req.user.isAdmin) {
-      return res.status(403).json({
-        success: false,
-        message: 'Not authorized to update expenses'
-      });
-    }
-    */
-
-    // ✅ Update expense using findByIdAndUpdate
+    // Update expense using findByIdAndUpdate
     const updatedExpense = await AdminExpense.findByIdAndUpdate(
       req.params.id,
       { 
@@ -265,8 +271,8 @@ export const updateExpense = async (req, res) => {
         updatedBy: req.user?._id 
       },
       {
-        new: true,           // Return updated document
-        runValidators: true   // Run schema validators
+        new: true,
+        runValidators: true
       }
     );
 
@@ -290,10 +296,11 @@ export const updateExpense = async (req, res) => {
     }
     
     if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
       return res.status(400).json({
         success: false,
         message: 'Validation error',
-        errors: error.errors
+        errors: messages
       });
     }
 
@@ -310,7 +317,6 @@ export const updateExpense = async (req, res) => {
 // @access  Private/Admin
 export const deleteExpense = async (req, res) => {
   try {
-    // ✅ AdminExpense use kar rahe hain
     const expense = await AdminExpense.findById(req.params.id);
 
     if (!expense) {
@@ -336,6 +342,15 @@ export const deleteExpense = async (req, res) => {
     });
   } catch (error) {
     console.error('Error in deleteExpense:', error);
+    
+    // Handle invalid ID format
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid expense ID format'
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: 'Server error while deleting expense',
@@ -361,7 +376,6 @@ export const getExpenseStats = async (req, res) => {
       };
     }
 
-    // ✅ AdminExpense use kar rahe hain
     const totalExpenses = await AdminExpense.aggregate([
       { $match: { ...dateFilter, status: { $ne: 'cancelled' } } },
       {
@@ -483,7 +497,6 @@ export const getExpensesByCategory = async (req, res) => {
     const limitNum = parseInt(limit);
     const skip = (pageNum - 1) * limitNum;
 
-    // ✅ AdminExpense use kar rahe hain
     const expenses = await AdminExpense.find(filter)
       .sort({ date: -1 })
       .skip(skip)
@@ -542,7 +555,6 @@ export const bulkDeleteExpenses = async (req, res) => {
       });
     }
 
-    // ✅ AdminExpense use kar rahe hain
     const result = await AdminExpense.deleteMany({
       _id: { $in: expenseIds }
     });
@@ -582,24 +594,21 @@ export const exportExpensesToCSV = async (req, res) => {
       filter.category = category;
     }
 
-    // ✅ AdminExpense use kar rahe hain
+    // ✅ FIXED: REMOVED .populate()
     const expenses = await AdminExpense.find(filter)
-      .sort({ date: -1 })
-      .populate('addedBy', 'name');
+      .sort({ date: -1 });
+      // .populate('addedBy', 'name'); // ❌ REMOVED - causing error
 
     // Create CSV header
     let csv = 'Date,Category,Description,Amount,Payment Method,Status,Added By,Notes\n';
 
     // Add rows
     expenses.forEach(expense => {
-      csv += `${new Date(expense.date).toLocaleDateString()},`;
-      csv += `${expense.category},`;
-      csv += `"${expense.description.replace(/"/g, '""')}",`;
-      csv += `${expense.amount},`;
-      csv += `${expense.paymentMethod},`;
-      csv += `${expense.status},`;
-      csv += `${expense.addedByName || 'admin'},`;
-      csv += `"${(expense.notes || '').replace(/"/g, '""')}"\n`;
+      const date = new Date(expense.date).toLocaleDateString();
+      const description = expense.description.replace(/,/g, ' '); // Remove commas to avoid CSV issues
+      const notes = (expense.notes || '').replace(/,/g, ' ');
+      
+      csv += `${date},${expense.category},"${description}",${expense.amount},${expense.paymentMethod},${expense.status},${expense.addedByName || 'admin'},"${notes}"\n`;
     });
 
     res.setHeader('Content-Type', 'text/csv');

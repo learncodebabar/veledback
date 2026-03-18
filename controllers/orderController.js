@@ -1,5 +1,7 @@
 import Order from "../models/Order.js";
 import Customer from "../models/Customer.js";
+import Admin from "../models/Admin.js";
+import { sendDueDateReminder } from "../utils/emailService.js";
 
 // ✅ Create Order
 export const createOrder = async (req, res) => {
@@ -38,7 +40,8 @@ export const createOrder = async (req, res) => {
       advancePayment: Number(req.body.advancePayment || 0),
       status: req.body.status || 'pending',
       notes: req.body.notes || '',
-      date: req.body.date || new Date()
+      date: req.body.date || new Date(),
+      dueDate: req.body.dueDate || null // Add dueDate if you have it in your schema
     });
 
     const savedOrder = await order.save();
@@ -53,6 +56,47 @@ export const createOrder = async (req, res) => {
     // Populate customer details for response
     const populatedOrder = await Order.findById(savedOrder._id)
       .populate("customer", "name phone address");
+
+    // 📧 SEND EMAIL NOTIFICATION TO ALL ADMINS
+    try {
+      // Get all admins
+      const admins = await Admin.find({}).select('name email');
+      
+      if (admins.length > 0) {
+        console.log(`📧 Sending new order notification to ${admins.length} admins`);
+        
+        // Calculate days remaining if dueDate exists
+        let daysRemaining = null;
+        if (savedOrder.dueDate) {
+          const today = new Date();
+          const dueDate = new Date(savedOrder.dueDate);
+          const diffTime = dueDate - today;
+          daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        }
+        
+        // Prepare order details for email
+        const orderDetails = {
+          customerName: customerExists.name,
+          billNumber: savedOrder.billNumber,
+          dueDate: savedOrder.dueDate || new Date(),
+          finalTotal: savedOrder.finalTotal,
+          advancePayment: savedOrder.advancePayment,
+          remainingBalance: savedOrder.remainingBalance,
+          daysRemaining: daysRemaining !== null ? daysRemaining : 0,
+          status: savedOrder.status
+        };
+        
+        // Send email to each admin
+        for (const admin of admins) {
+          await sendDueDateReminder(admin.email, admin.name, orderDetails);
+        }
+        
+        console.log(`✅ New order notifications sent successfully`);
+      }
+    } catch (emailError) {
+      console.error("❌ Error sending new order email notifications:", emailError);
+      // Don't fail the order creation if email fails
+    }
 
     res.status(201).json({
       success: true,
@@ -162,22 +206,29 @@ export const getOrdersByCustomer = async (req, res) => {
 // ✅ Update Order
 export const updateOrder = async (req, res) => {
   try {
+    // Get original order before update
+    const originalOrder = await Order.findById(req.params.id);
+    
+    if (!originalOrder) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Order not found" 
+      });
+    }
+
     // Calculate remaining balance if finalTotal or advancePayment is updated
     if (req.body.finalTotal !== undefined || req.body.advancePayment !== undefined) {
-      const order = await Order.findById(req.params.id);
-      if (order) {
-        const finalTotal = req.body.finalTotal !== undefined ? req.body.finalTotal : order.finalTotal;
-        const advancePayment = req.body.advancePayment !== undefined ? req.body.advancePayment : order.advancePayment;
-        req.body.remainingBalance = finalTotal - advancePayment;
-        
-        // Update payment status
-        if (advancePayment >= finalTotal) {
-          req.body.paymentStatus = 'paid';
-        } else if (advancePayment > 0) {
-          req.body.paymentStatus = 'partial';
-        } else {
-          req.body.paymentStatus = 'pending';
-        }
+      const finalTotal = req.body.finalTotal !== undefined ? req.body.finalTotal : originalOrder.finalTotal;
+      const advancePayment = req.body.advancePayment !== undefined ? req.body.advancePayment : originalOrder.advancePayment;
+      req.body.remainingBalance = finalTotal - advancePayment;
+      
+      // Update payment status
+      if (advancePayment >= finalTotal) {
+        req.body.paymentStatus = 'paid';
+      } else if (advancePayment > 0) {
+        req.body.paymentStatus = 'partial';
+      } else {
+        req.body.paymentStatus = 'pending';
       }
     }
 
@@ -187,11 +238,58 @@ export const updateOrder = async (req, res) => {
       { new: true, runValidators: true }
     ).populate("customer", "name phone address");
 
-    if (!updatedOrder) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "Order not found" 
-      });
+    // 📧 SEND EMAIL NOTIFICATION FOR ORDER UPDATE
+    try {
+      // Check if important fields changed
+      const importantChanges = [];
+      if (req.body.status && req.body.status !== originalOrder.status) {
+        importantChanges.push(`status changed from ${originalOrder.status} to ${req.body.status}`);
+      }
+      if (req.body.dueDate && req.body.dueDate !== originalOrder.dueDate?.toISOString()) {
+        importantChanges.push('due date updated');
+      }
+      if (req.body.finalTotal && req.body.finalTotal !== originalOrder.finalTotal) {
+        importantChanges.push('final total updated');
+      }
+      
+      if (importantChanges.length > 0) {
+        const admins = await Admin.find({}).select('name email');
+        
+        if (admins.length > 0) {
+          console.log(`📧 Sending order update notification to ${admins.length} admins`);
+          
+          const customer = await Customer.findById(updatedOrder.customer);
+          
+          // Calculate days remaining
+          let daysRemaining = null;
+          if (updatedOrder.dueDate) {
+            const today = new Date();
+            const dueDate = new Date(updatedOrder.dueDate);
+            const diffTime = dueDate - today;
+            daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          }
+          
+          const orderDetails = {
+            customerName: customer?.name || 'Unknown',
+            billNumber: updatedOrder.billNumber,
+            dueDate: updatedOrder.dueDate || new Date(),
+            finalTotal: updatedOrder.finalTotal,
+            advancePayment: updatedOrder.advancePayment,
+            remainingBalance: updatedOrder.remainingBalance,
+            daysRemaining: daysRemaining !== null ? daysRemaining : 0,
+            status: updatedOrder.status,
+            changes: importantChanges.join(', ')
+          };
+          
+          for (const admin of admins) {
+            await sendDueDateReminder(admin.email, admin.name, orderDetails);
+          }
+          
+          console.log(`✅ Order update notifications sent successfully`);
+        }
+      }
+    } catch (emailError) {
+      console.error("❌ Error sending update email notifications:", emailError);
     }
 
     res.status(200).json({
@@ -282,6 +380,45 @@ export const updateOrderStatus = async (req, res) => {
       });
     }
 
+    // 📧 SEND EMAIL FOR STATUS CHANGE
+    try {
+      const admins = await Admin.find({}).select('name email');
+      
+      if (admins.length > 0) {
+        console.log(`📧 Sending status update notification to ${admins.length} admins`);
+        
+        const customer = await Customer.findById(updatedOrder.customer);
+        
+        // Calculate days remaining
+        let daysRemaining = null;
+        if (updatedOrder.dueDate) {
+          const today = new Date();
+          const dueDate = new Date(updatedOrder.dueDate);
+          const diffTime = dueDate - today;
+          daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        }
+        
+        const orderDetails = {
+          customerName: customer?.name || 'Unknown',
+          billNumber: updatedOrder.billNumber,
+          dueDate: updatedOrder.dueDate || new Date(),
+          finalTotal: updatedOrder.finalTotal,
+          advancePayment: updatedOrder.advancePayment,
+          remainingBalance: updatedOrder.remainingBalance,
+          daysRemaining: daysRemaining !== null ? daysRemaining : 0,
+          status: updatedOrder.status
+        };
+        
+        for (const admin of admins) {
+          await sendDueDateReminder(admin.email, admin.name, orderDetails);
+        }
+        
+        console.log(`✅ Status update notifications sent successfully`);
+      }
+    } catch (emailError) {
+      console.error("❌ Error sending status update email:", emailError);
+    }
+
     res.status(200).json({
       success: true,
       data: updatedOrder,
@@ -332,6 +469,37 @@ export const addPayment = async (req, res) => {
 
     const updatedOrder = await Order.findById(order._id)
       .populate("customer", "name phone address");
+
+    // 📧 SEND EMAIL FOR PAYMENT ADDED
+    try {
+      const admins = await Admin.find({}).select('name email');
+      
+      if (admins.length > 0) {
+        console.log(`📧 Sending payment notification to ${admins.length} admins`);
+        
+        const customer = await Customer.findById(updatedOrder.customer);
+        
+        const orderDetails = {
+          customerName: customer?.name || 'Unknown',
+          billNumber: updatedOrder.billNumber,
+          dueDate: updatedOrder.dueDate || new Date(),
+          finalTotal: updatedOrder.finalTotal,
+          advancePayment: updatedOrder.advancePayment,
+          remainingBalance: updatedOrder.remainingBalance,
+          daysRemaining: 0,
+          status: updatedOrder.status,
+          paymentAdded: paymentAmount
+        };
+        
+        for (const admin of admins) {
+          await sendDueDateReminder(admin.email, admin.name, orderDetails);
+        }
+        
+        console.log(`✅ Payment notifications sent successfully`);
+      }
+    } catch (emailError) {
+      console.error("❌ Error sending payment email:", emailError);
+    }
 
     res.status(200).json({
       success: true,
