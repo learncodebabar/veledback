@@ -14,44 +14,17 @@ import adminPaymentRoutes from "./routes/adminPaymentRoutes.js";
 import laborRoutes from "./routes/laborRoutes.js"; 
 import attendanceRoutes from "./routes/attendanceRoutes.js";
 import roleRoutes from './routes/roleRoutes.js';
-import workerPaymentRoutes from './routes/workerPayment.js';
+// ✅ Fix 1: Sahi path se import karein
+import workerPaymentRoutes from './routes/workerPayment.js';  // routes folder se import
 
 dotenv.config();
 const app = express();
 
 // Middleware
 app.use(express.json());
+app.use(cors({ origin: process.env.CLIENT_URL, credentials: true }));
 
-// CORS configuration
-const allowedOrigins = [
-  'https://veledfront.vercel.app',
-  'http://localhost:5173',
-  'http://localhost:3000',
-];
 
-const corsOptions = {
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl, etc.)
-    if (!origin) return callback(null, true);
-    
-    // Allow in development or if origin is in allowed list
-    if (process.env.NODE_ENV !== 'production' || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      console.log(`CORS blocked origin: ${origin}`);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  optionsSuccessStatus: 200
-};
-
-app.use(cors(corsOptions));
-
-// Handle preflight requests explicitly
-app.options('*', cors(corsOptions));
 
 // Serve uploads folder
 app.use("/uploads", express.static("uploads"));
@@ -69,7 +42,8 @@ app.use("/api/admin/payments", adminPaymentRoutes);
 app.use('/api/labor', laborRoutes);  
 app.use("/api/attendance", attendanceRoutes);  
 app.use('/api/roles', roleRoutes);
-app.use('/api/worker-payment', workerPaymentRoutes);
+// ✅ Fix 2: app.use() use karein, router.use() nahi
+app.use('/api/worker-payment', workerPaymentRoutes);  // Worker payment routes
 
 // Test route
 app.get("/", (req, res) => {
@@ -91,7 +65,4 @@ connectDB();
 
 // Start server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`CORS enabled for origins: ${process.env.NODE_ENV === 'production' ? allowedOrigins.join(', ') : 'all in development'}`);
-});
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
