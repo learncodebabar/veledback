@@ -43,7 +43,7 @@ export const getAllCustomers = async (req, res) => {
 
 
 
-// ✅ 3️⃣ Get Single Customer + Jobs
+// ✅ 3️⃣ Get Single Customer + Jobs (CORRECT VERSION)
 export const getSingleCustomer = async (req, res) => {
   try {
     const { id } = req.params;
@@ -51,21 +51,29 @@ export const getSingleCustomer = async (req, res) => {
     const customer = await Customer.findById(id);
 
     if (!customer) {
-      return res.status(404).json({ message: "Customer not found" });
+      return res.status(404).json({ 
+        success: false,
+        message: "Customer not found" 
+      });
     }
 
     // customer ke jobs nikaal rahe hain
     const jobs = await Job.find({ customer: id })
       .sort({ createdAt: -1 });
 
-    res.json({
-      customer,
-      jobs
+    // Send response with proper structure
+    res.status(200).json({
+      success: true,
+      customer: customer,
+      jobs: jobs
     });
 
   } catch (err) {
     console.log("GET SINGLE ERROR:", err);
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ 
+      success: false, 
+      message: err.message 
+    });
   }
 };
 
@@ -96,7 +104,6 @@ export const updateCustomer = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
-
 
 
 
