@@ -82,6 +82,6 @@ const connectDB = async () => {
 connectDB();
 
 
-// Start server
+// Start server star
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));``
