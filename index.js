@@ -1,10 +1,7 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-
 import express from "express";
-
-
 import mongoose from "mongoose";
 import cors from "cors";
 import { startDueDateCron } from './utils/cronJobs.js';
@@ -20,21 +17,61 @@ import adminPaymentRoutes from "./routes/adminPaymentRoutes.js";
 import laborRoutes from "./routes/laborRoutes.js"; 
 import attendanceRoutes from "./routes/attendanceRoutes.js";
 import roleRoutes from './routes/roleRoutes.js';
-import adminMaterialRoutes from './routes/adminMaterial.js'; // Add this line
+import adminMaterialRoutes from './routes/adminMaterial.js';
 import permissionRoutes from "./routes/permissionRoutes.js";
-// ✅ Fix 1: Sahi path se import karein
 import quotationCustomerRoutes from './routes/quotationCustomer.js';
 import workerPaymentRoutes from './routes/workerPayment.js';
 import quotationMaterialRoutes from './routes/quotationMaterial.js';
-
-// ✅ Quotation Routes
-import quotationRoutes from './routes/quotation.js';  // routes folder se import
+import quotationRoutes from './routes/quotation.js';
 
 const app = express();
 
+// ==================== CORS FIX ====================
+// Remove trailing slash from CLIENT_URL if present
+const clientUrl = process.env.CLIENT_URL ? process.env.CLIENT_URL.replace(/\/$/, '') : 'https://veledfront.vercel.app';
+
+// CORS options with proper configuration
+const corsOptions = {
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) {
+      return callback(null, true);
+    }
+    
+    // Normalize the origin by removing trailing slash
+    const normalizedOrigin = origin.replace(/\/$/, '');
+    
+    // Check if the normalized origin matches the allowed client URL
+    if (normalizedOrigin === clientUrl) {
+      callback(null, true);
+    } else {
+      console.log(`CORS blocked: ${origin} not allowed. Expected: ${clientUrl}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  optionsSuccessStatus: 200
+};
+
+// Apply CORS middleware
+app.use(cors(corsOptions));
+
+// Logging middleware to debug CORS issues (remove in production if not needed)
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  if (req.headers.origin) {
+    console.log('Origin:', req.headers.origin);
+  }
+  next();
+});
+// ==================== END CORS FIX ====================
+
 // Middleware
 app.use(express.json());
-app.use(cors({ origin: process.env.CLIENT_URL, credentials: true }));
+app.use(express.urlencoded({ extended: true }));
 
 // Serve uploads folder
 app.use("/uploads", express.static("uploads"));
@@ -55,22 +92,48 @@ app.use('/api/roles', roleRoutes);
 app.use('/api/quotation-materials', quotationMaterialRoutes);
 app.use('/api/quotations', quotationRoutes);
 app.use("/api/permissions", permissionRoutes);
-// Use routes
-app.use('/api/admin/materials', adminMaterialRoutes); // Add this line
-    startDueDateCron();
-// ✅ Fix 2: app.use() use karein, router.use() nahi
+app.use('/api/admin/materials', adminMaterialRoutes);
 app.use('/api/quotation-customers', quotationCustomerRoutes);
-app.use('/api/worker-payment', workerPaymentRoutes);  // Worker payment routes
-console.log("EMAIL:", process.env.EMAIL_USER);
-console.log("PASS:", process.env.EMAIL_PASS);
+app.use('/api/worker-payment', workerPaymentRoutes);
+
+// Start cron jobs
+startDueDateCron();
+
+// Environment variables check (remove in production)
+console.log("Environment Check:");
+console.log("EMAIL_USER:", process.env.EMAIL_USER ? "✅ Set" : "❌ Not Set");
+console.log("EMAIL_PASS:", process.env.EMAIL_PASS ? "✅ Set" : "❌ Not Set");
+console.log("MONGO_URI:", process.env.MONGO_URI ? "✅ Set" : "❌ Not Set");
+console.log("JWT_SECRET:", process.env.JWT_SECRET ? "✅ Set" : "❌ Not Set");
+console.log("CLIENT_URL:", clientUrl);
+console.log("PORT:", process.env.PORT || 5000);
+
 // Test route
 app.get("/", (req, res) => {
-  res.send("🔥 Backend running");
+  res.json({ 
+    message: "🔥 Backend running", 
+    status: "active",
+    cors: {
+      allowedOrigin: clientUrl,
+      credentials: true
+    }
+  });
 });
 
-// MongoDB Connection
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.json({ 
+    status: "healthy", 
+    timestamp: new Date().toISOString(),
+    mongodb: mongoose.connection.readyState === 1 ? "connected" : "disconnected"
+  });
+});
+
+// MongoDB Connection - FIXED: Removed deprecated options
 const connectDB = async () => {
   try {
+    // For Mongoose 7+, no need for useNewUrlParser and useUnifiedTopology
+    // They are enabled by default
     await mongoose.connect(process.env.MONGO_URI);
     console.log("✅ MongoDB Connected");
   } catch (err) {
@@ -81,7 +144,33 @@ const connectDB = async () => {
 
 connectDB();
 
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error("Error:", err);
+  
+  // Handle CORS errors specifically
+  if (err.message === 'Not allowed by CORS') {
+    return res.status(403).json({ 
+      error: "CORS Error", 
+      message: "Origin not allowed",
+      allowedOrigin: clientUrl
+    });
+  }
+  
+  res.status(err.status || 500).json({ 
+    error: err.message || "Internal Server Error" 
+  });
+});
 
-// Start server star
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ error: "Route not found" });
+});
+
+// Start server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));``
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📍 CORS enabled for: ${clientUrl}`);
+  console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
+});
