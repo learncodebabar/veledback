@@ -4,6 +4,8 @@ dotenv.config();
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
+import path from "path";  // ✅ یہ import کریں
+import { fileURLToPath } from 'url';  // ✅ یہ بھی import کریں
 import { startDueDateCron } from './utils/cronJobs.js';
 import adminRoutes from "./routes/adminRoutes.js";
 import customerRoutes from "./routes/customerRoutes.js";
@@ -24,57 +26,25 @@ import workerPaymentRoutes from './routes/workerPayment.js';
 import quotationMaterialRoutes from './routes/quotationMaterial.js';
 import quotationRoutes from './routes/quotation.js';
 
+// ✅ یہ دو لائنیں ضروری ہیں
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
 
-// ==================== CORS FIX ====================
-// Remove trailing slash from CLIENT_URL if present
-const clientUrl = process.env.CLIENT_URL ? process.env.CLIENT_URL.replace(/\/$/, '') : 'https://veledfront.vercel.app';
+// ✅ یہ پہلے لگائیں (static files serve کرنے سے پہلے)
+app.use(express.json());
+app.use(cors({ origin: process.env.CLIENT_URL, credentials: true }));
 
-// CORS options with proper configuration
-const corsOptions = {
-  origin: function(origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) {
-      return callback(null, true);
-    }
-    
-    // Normalize the origin by removing trailing slash
-    const normalizedOrigin = origin.replace(/\/$/, '');
-    
-    // Check if the normalized origin matches the allowed client URL
-    if (normalizedOrigin === clientUrl) {
-      callback(null, true);
-    } else {
-      console.log(`CORS blocked: ${origin} not allowed. Expected: ${clientUrl}`);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
-  exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  optionsSuccessStatus: 200
-};
+// ✅ Serve uploads folder - یہ صحیح طریقہ ہے
+app.use("/uploads", express.static(path.join(__dirname, 'uploads')));
+console.log('📁 Uploads folder path:', path.join(__dirname, 'uploads'));
 
-// Apply CORS middleware
-app.use(cors(corsOptions));
-
-// Logging middleware to debug CORS issues (remove in production if not needed)
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-  if (req.headers.origin) {
-    console.log('Origin:', req.headers.origin);
-  }
+// Optional: یہ middleware لگا دیں کہ دیکھیں کون سی فائلیں مانگی جا رہی ہیں
+app.use('/uploads', (req, res, next) => {
+  console.log('🖼️ Requested file:', req.url);
   next();
 });
-// ==================== END CORS FIX ====================
-
-// Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Serve uploads folder
-app.use("/uploads", express.static("uploads"));
 
 // Routes
 app.use("/api/admin", adminRoutes);
@@ -96,44 +66,19 @@ app.use('/api/admin/materials', adminMaterialRoutes);
 app.use('/api/quotation-customers', quotationCustomerRoutes);
 app.use('/api/worker-payment', workerPaymentRoutes);
 
-// Start cron jobs
 startDueDateCron();
 
-// Environment variables check (remove in production)
-console.log("Environment Check:");
-console.log("EMAIL_USER:", process.env.EMAIL_USER ? "✅ Set" : "❌ Not Set");
-console.log("EMAIL_PASS:", process.env.EMAIL_PASS ? "✅ Set" : "❌ Not Set");
-console.log("MONGO_URI:", process.env.MONGO_URI ? "✅ Set" : "❌ Not Set");
-console.log("JWT_SECRET:", process.env.JWT_SECRET ? "✅ Set" : "❌ Not Set");
-console.log("CLIENT_URL:", clientUrl);
-console.log("PORT:", process.env.PORT || 5000);
+console.log("EMAIL:", process.env.EMAIL_USER);
+console.log("PASS:", process.env.EMAIL_PASS ? "✅ Set" : "❌ Not set");
 
 // Test route
 app.get("/", (req, res) => {
-  res.json({ 
-    message: "🔥 Backend running", 
-    status: "active",
-    cors: {
-      allowedOrigin: clientUrl,
-      credentials: true
-    }
-  });
+  res.send("🔥 Backend running");
 });
 
-// Health check endpoint
-app.get("/health", (req, res) => {
-  res.json({ 
-    status: "healthy", 
-    timestamp: new Date().toISOString(),
-    mongodb: mongoose.connection.readyState === 1 ? "connected" : "disconnected"
-  });
-});
-
-// MongoDB Connection - FIXED: Removed deprecated options
+// MongoDB Connection
 const connectDB = async () => {
   try {
-    // For Mongoose 7+, no need for useNewUrlParser and useUnifiedTopology
-    // They are enabled by default
     await mongoose.connect(process.env.MONGO_URI);
     console.log("✅ MongoDB Connected");
   } catch (err) {
@@ -144,33 +89,6 @@ const connectDB = async () => {
 
 connectDB();
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error("Error:", err);
-  
-  // Handle CORS errors specifically
-  if (err.message === 'Not allowed by CORS') {
-    return res.status(403).json({ 
-      error: "CORS Error", 
-      message: "Origin not allowed",
-      allowedOrigin: clientUrl
-    });
-  }
-  
-  res.status(err.status || 500).json({ 
-    error: err.message || "Internal Server Error" 
-  });
-});
-
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ error: "Route not found" });
-});
-
 // Start server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📍 CORS enabled for: ${clientUrl}`);
-  console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
-});
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

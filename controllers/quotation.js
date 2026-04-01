@@ -9,22 +9,37 @@ import PDFDocument from 'pdfkit';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ========== CONFIGURE MULTER ==========
+// ========== CONFIGURE MULTER FOR IMAGE UPLOADS ==========
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, '../../uploads/quotations');
+    // Save to backend/uploads/quotations folder
+    // Current file: backend/controllers/quotation.js
+    // Go up 1 level: backend/controllers -> backend
+    const backendDir = path.join(__dirname, '../');
+    const uploadDir = path.join(backendDir, 'uploads/quotations');
+    
+    // Create directory if it doesn't exist
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
+      console.log(`✅ Created directory: ${uploadDir}`);
     }
+    
+    console.log(`📁 Saving images to: ${uploadDir}`);
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    // Generate unique filename
+    const timestamp = Date.now();
+    const random = Math.round(Math.random() * 1E9);
     const ext = path.extname(file.originalname);
-    cb(null, `quotation-${uniqueSuffix}${ext}`);
+    const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
+    const filename = `quotation_${timestamp}_${random}${ext}`;
+    console.log(`📸 Saving file: ${filename}`);
+    cb(null, filename);
   }
 });
 
+// File filter for images
 const fileFilter = (req, file, cb) => {
   const allowedTypes = /jpeg|jpg|png|gif|webp/;
   const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
@@ -33,16 +48,18 @@ const fileFilter = (req, file, cb) => {
   if (mimetype && extname) {
     return cb(null, true);
   } else {
-    cb(new Error('Only image files are allowed'));
+    cb(new Error('Only image files (jpeg, jpg, png, gif, webp) are allowed'));
   }
 };
 
+// Create multer upload instance
 const upload = multer({ 
   storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
   fileFilter: fileFilter
 });
 
+// Export the upload middleware for multiple images
 export const uploadImages = upload.array('images', 5);
 
 // Helper function to generate quotation number
@@ -67,17 +84,22 @@ const generateQuotationNumber = async () => {
   return `Q-${year}${month}-${nextNumber.toString().padStart(4, '0')}`;
 };
 
-// ✅ CREATE QUOTATION WITH ESTIMATE
+// ✅ CREATE QUOTATION
 export const createQuotation = async (req, res) => {
   try {
     console.log("📦 Creating quotation with data:", req.body);
-    console.log("📸 Images received:", req.files);
+    console.log("📸 Images received:", req.files ? `${req.files.length} images` : "No images");
+    
+    if (req.files && req.files.length > 0) {
+      req.files.forEach((file, index) => {
+        console.log(`Image ${index + 1}: ${file.filename} - Saved at: ${file.path}`);
+      });
+    }
 
     const {
       customer,
       items,
-      validUntil,
-      estimate
+      validUntil
     } = req.body;
 
     // Validate required fields
@@ -119,16 +141,6 @@ export const createQuotation = async (req, res) => {
       });
     }
 
-    // Parse estimate if it comes as string
-    let parsedEstimate = { low: 0, medium: 0, high: 0 };
-    if (estimate) {
-      try {
-        parsedEstimate = typeof estimate === 'string' ? JSON.parse(estimate) : estimate;
-      } catch (e) {
-        console.log("Estimate parse error, using defaults");
-      }
-    }
-
     // Ensure parsedItems is an array
     if (!Array.isArray(parsedItems)) {
       return res.status(400).json({
@@ -137,7 +149,7 @@ export const createQuotation = async (req, res) => {
       });
     }
 
-    // Process items and ensure all required fields are present
+    // Process items
     const processedItems = [];
     let grandTotal = 0;
 
@@ -176,8 +188,14 @@ export const createQuotation = async (req, res) => {
     // Handle uploaded images
     const images = [];
     if (req.files && req.files.length > 0) {
+      console.log(`Processing ${req.files.length} images...`);
+      
       req.files.forEach((file, index) => {
+        // Store the URL path for frontend access (relative to backend)
+        // The server serves files from /uploads at the root level
         const imageUrl = `/uploads/quotations/${file.filename}`;
+        console.log(`Image ${index + 1} URL: ${imageUrl}`);
+        
         images.push({
           url: imageUrl,
           filename: file.filename,
@@ -190,7 +208,7 @@ export const createQuotation = async (req, res) => {
     // Generate quotation number
     const quotationNumber = await generateQuotationNumber();
 
-    // Create quotation with estimate
+    // Create quotation
     const quotation = await Quotation.create({
       customer,
       customerName: customerData.name,
@@ -200,11 +218,6 @@ export const createQuotation = async (req, res) => {
       items: processedItems,
       grandTotal,
       quotationNumber,
-      estimate: {
-        low: parseFloat(parsedEstimate.low) || 0,
-        medium: parseFloat(parsedEstimate.medium) || 0,
-        high: parseFloat(parsedEstimate.high) || 0
-      },
       validUntil: validUntil || new Date(+new Date() + 30*24*60*60*1000),
       createdBy: adminId,
       createdByAdmin: adminName,
@@ -217,6 +230,8 @@ export const createQuotation = async (req, res) => {
       lastQuotationDate: new Date()
     });
 
+    console.log(`✅ Quotation created successfully: ${quotationNumber}`);
+    
     res.status(201).json({
       success: true,
       message: "Quotation created successfully",
@@ -226,6 +241,17 @@ export const createQuotation = async (req, res) => {
   } catch (error) {
     console.error("❌ Error creating quotation:", error);
     
+    // Clean up uploaded files if there's an error
+    if (req.files && req.files.length > 0) {
+      console.log("Cleaning up uploaded files due to error...");
+      req.files.forEach(file => {
+        if (file.path && fs.existsSync(file.path)) {
+          fs.unlinkSync(file.path);
+          console.log(`Cleaned up: ${file.path}`);
+        }
+      });
+    }
+    
     if (error.name === 'ValidationError') {
       return res.status(400).json({
         success: false,
@@ -233,6 +259,374 @@ export const createQuotation = async (req, res) => {
       });
     }
     
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to create quotation"
+    });
+  }
+};
+
+// ✅ GET QUOTATION BY ID
+export const getQuotationById = async (req, res) => {
+  try {
+    const quotation = await Quotation.findById(req.params.id)
+      .populate('customer', 'name phone address');
+
+    if (!quotation) {
+      return res.status(404).json({
+        success: false,
+        message: "Quotation not found"
+      });
+    }
+
+    // Check authorization
+    if (quotation.createdBy.toString() !== req.admin._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to access this quotation"
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: quotation
+    });
+
+  } catch (error) {
+    console.error("❌ Error fetching quotation:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// ✅ GET ALL QUOTATIONS
+export const getAllQuotations = async (req, res) => {
+  try {
+    const adminId = req.admin._id;
+
+    const quotations = await Quotation.find({ createdBy: adminId })
+      .populate('customer', 'name phone')
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      count: quotations.length,
+      data: quotations
+    });
+
+  } catch (error) {
+    console.error("❌ Error fetching quotations:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// ✅ UPDATE QUOTATION
+export const updateQuotation = async (req, res) => {
+  try {
+    const quotation = await Quotation.findById(req.params.id);
+
+    if (!quotation) {
+      return res.status(404).json({
+        success: false,
+        message: "Quotation not found"
+      });
+    }
+
+    // Check authorization
+    if (quotation.createdBy.toString() !== req.admin._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to update this quotation"
+      });
+    }
+
+    const {
+      items,
+      validUntil,
+      status
+    } = req.body;
+
+    // Parse and update items if provided
+    if (items) {
+      let parsedItems = typeof items === 'string' ? JSON.parse(items) : items;
+      
+      const processedItems = [];
+      let grandTotal = 0;
+
+      for (const item of parsedItems) {
+        const processedMaterials = [];
+        let itemSubtotal = 0;
+
+        const materials = item.materials || [];
+
+        for (const material of materials) {
+          const quantity = parseFloat(material.quantity) || 0;
+          const pricePerUnit = parseFloat(material.pricePerUnit) || 0;
+          const materialTotal = quantity * pricePerUnit;
+
+          itemSubtotal += materialTotal;
+
+          processedMaterials.push({
+            name: material.materialName || material.name || 'Unknown Material',
+            quantity: quantity,
+            unit: material.unit || 'piece',
+            pricePerUnit: pricePerUnit,
+            totalPrice: materialTotal
+          });
+        }
+
+        processedItems.push({
+          title: item.title || 'Quotation Item',
+          notes: item.notes || '',
+          materials: processedMaterials,
+          subtotal: itemSubtotal
+        });
+
+        grandTotal += itemSubtotal;
+      }
+
+      quotation.items = processedItems;
+      quotation.grandTotal = grandTotal;
+    }
+
+    // Update other fields
+    if (validUntil) quotation.validUntil = validUntil;
+    if (status) quotation.status = status;
+
+    // Handle new images if uploaded
+    if (req.files && req.files.length > 0) {
+      console.log(`Adding ${req.files.length} new images...`);
+      
+      req.files.forEach((file, index) => {
+        const imageUrl = `/uploads/quotations/${file.filename}`;
+        
+        quotation.images.push({
+          url: imageUrl,
+          filename: file.filename,
+          description: req.body[`imageDescription_${index}`] || '',
+          uploadedAt: new Date()
+        });
+      });
+    }
+
+    await quotation.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Quotation updated successfully",
+      data: quotation
+    });
+
+  } catch (error) {
+    console.error("❌ Error updating quotation:", error);
+    
+    // Clean up uploaded files if there's an error
+    if (req.files && req.files.length > 0) {
+      req.files.forEach(file => {
+        if (file.path && fs.existsSync(file.path)) {
+          fs.unlinkSync(file.path);
+        }
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// ✅ DELETE QUOTATION
+export const deleteQuotation = async (req, res) => {
+  try {
+    const quotation = await Quotation.findById(req.params.id);
+
+    if (!quotation) {
+      return res.status(404).json({
+        success: false,
+        message: "Quotation not found"
+      });
+    }
+
+    // Check authorization
+    if (quotation.createdBy.toString() !== req.admin._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to delete this quotation"
+      });
+    }
+
+    // Delete associated images from filesystem
+    if (quotation.images && quotation.images.length > 0) {
+      console.log(`Deleting ${quotation.images.length} images...`);
+      const backendDir = path.join(__dirname, '../');
+      
+      quotation.images.forEach(image => {
+        // Remove leading slash from URL if present
+        const relativePath = image.url.startsWith('/') ? image.url.substring(1) : image.url;
+        const imagePath = path.join(backendDir, relativePath);
+        
+        if (fs.existsSync(imagePath)) {
+          fs.unlinkSync(imagePath);
+          console.log(`Deleted: ${imagePath}`);
+        }
+      });
+    }
+
+    await quotation.deleteOne();
+
+    // Update customer's quotation count
+    await QuotationCustomer.findByIdAndUpdate(quotation.customer, {
+      $inc: { totalQuotations: -1 }
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Quotation deleted successfully"
+    });
+
+  } catch (error) {
+    console.error("❌ Error deleting quotation:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// ✅ DELETE IMAGE FROM QUOTATION
+export const deleteQuotationImage = async (req, res) => {
+  try {
+    const { quotationId, imageId } = req.params;
+
+    const quotation = await Quotation.findById(quotationId);
+
+    if (!quotation) {
+      return res.status(404).json({
+        success: false,
+        message: "Quotation not found"
+      });
+    }
+
+    // Check authorization
+    if (quotation.createdBy.toString() !== req.admin._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized"
+      });
+    }
+
+    // Find and remove image
+    const imageIndex = quotation.images.findIndex(img => img._id.toString() === imageId);
+    
+    if (imageIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: "Image not found"
+      });
+    }
+
+    // Delete file from filesystem
+    const image = quotation.images[imageIndex];
+    const backendDir = path.join(__dirname, '../');
+    const relativePath = image.url.startsWith('/') ? image.url.substring(1) : image.url;
+    const imagePath = path.join(backendDir, relativePath);
+    
+    if (fs.existsSync(imagePath)) {
+      fs.unlinkSync(imagePath);
+      console.log(`Deleted image: ${imagePath}`);
+    }
+
+    // Remove from array
+    quotation.images.splice(imageIndex, 1);
+    await quotation.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Image deleted successfully"
+    });
+
+  } catch (error) {
+    console.error("❌ Error deleting image:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// ✅ UPDATE QUOTATION STATUS
+export const updateQuotationStatus = async (req, res) => {
+  try {
+    const { status } = req.body;
+
+    const validStatuses = ['draft', 'sent', 'accepted', 'rejected', 'expired'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid status value"
+      });
+    }
+
+    const quotation = await Quotation.findById(req.params.id);
+
+    if (!quotation) {
+      return res.status(404).json({
+        success: false,
+        message: "Quotation not found"
+      });
+    }
+
+    // Check authorization
+    if (quotation.createdBy.toString() !== req.admin._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to update this quotation"
+      });
+    }
+
+    quotation.status = status;
+    await quotation.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Quotation status updated successfully",
+      data: quotation
+    });
+
+  } catch (error) {
+    console.error("❌ Error updating quotation status:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// ✅ GET QUOTATIONS BY CUSTOMER
+export const getQuotationsByCustomer = async (req, res) => {
+  try {
+    const adminId = req.admin._id;
+
+    const quotations = await Quotation.find({
+      createdBy: adminId,
+      customer: req.params.customerId
+    })
+    .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      count: quotations.length,
+      data: quotations
+    });
+
+  } catch (error) {
+    console.error("❌ Error fetching customer quotations:", error);
     res.status(500).json({
       success: false,
       message: error.message
@@ -245,8 +639,7 @@ export const printQuotationWithoutCost = async (req, res) => {
   try {
     const { id } = req.params;
     
-    const quotation = await Quotation.findById(id)
-      .populate('customer', 'name phone address');
+    const quotation = await Quotation.findById(id);
     
     if (!quotation) {
       return res.status(404).json({
@@ -341,8 +734,7 @@ export const printQuotationWithCost = async (req, res) => {
   try {
     const { id } = req.params;
     
-    const quotation = await Quotation.findById(id)
-      .populate('customer', 'name phone address');
+    const quotation = await Quotation.findById(id);
     
     if (!quotation) {
       return res.status(404).json({
@@ -426,20 +818,7 @@ export const printQuotationWithCost = async (req, res) => {
     doc.moveDown();
     doc.fontSize(12).font('Helvetica-Bold');
     doc.text(`Grand Total: Rs ${grandTotal}`, { align: 'right' });
-    doc.moveDown();
-
-    // ✅ Estimate Section
-    if (quotation.estimate && (quotation.estimate.low > 0 || quotation.estimate.medium > 0 || quotation.estimate.high > 0)) {
-      doc.fontSize(12).font('Helvetica-Bold').text('Project Estimate', 50, doc.y + 20);
-      doc.moveDown();
-      
-      const estimateY = doc.y;
-      doc.fontSize(10).font('Helvetica');
-      doc.text(`Low: Rs ${quotation.estimate.low}`, 70, estimateY);
-      doc.text(`Medium: Rs ${quotation.estimate.medium}`, 200, estimateY);
-      doc.text(`High: Rs ${quotation.estimate.high}`, 330, estimateY);
-      doc.moveDown(2);
-    }
+    doc.moveDown(2);
 
     // Terms
     doc.fontSize(10).font('Helvetica-Bold').text('Terms & Conditions:', 50, doc.y + 10);
@@ -461,8 +840,7 @@ export const getQuotationPdfData = async (req, res) => {
   try {
     const { id } = req.params;
     
-    const quotation = await Quotation.findById(id)
-      .populate('customer', 'name phone address');
+    const quotation = await Quotation.findById(id);
     
     if (!quotation) {
       return res.status(404).json({
@@ -486,363 +864,6 @@ export const getQuotationPdfData = async (req, res) => {
 
   } catch (error) {
     console.error("❌ Error fetching quotation data:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
-};
-
-// ✅ UPDATE QUOTATION
-export const updateQuotation = async (req, res) => {
-  try {
-    const quotation = await Quotation.findById(req.params.id);
-
-    if (!quotation) {
-      return res.status(404).json({
-        success: false,
-        message: "Quotation not found"
-      });
-    }
-
-    // Check authorization
-    if (quotation.createdBy.toString() !== req.admin._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: "Not authorized to update this quotation"
-      });
-    }
-
-    const {
-      items,
-      validUntil,
-      status,
-      estimate
-    } = req.body;
-
-    // Parse and update items if provided
-    if (items) {
-      let parsedItems = typeof items === 'string' ? JSON.parse(items) : items;
-      
-      const processedItems = [];
-      let grandTotal = 0;
-
-      for (const item of parsedItems) {
-        const processedMaterials = [];
-        let itemSubtotal = 0;
-
-        const materials = item.materials || [];
-
-        for (const material of materials) {
-          const quantity = parseFloat(material.quantity) || 0;
-          const pricePerUnit = parseFloat(material.pricePerUnit) || 0;
-          const materialTotal = quantity * pricePerUnit;
-
-          itemSubtotal += materialTotal;
-
-          processedMaterials.push({
-            name: material.materialName || material.name || 'Unknown Material',
-            quantity: quantity,
-            unit: material.unit || 'piece',
-            pricePerUnit: pricePerUnit,
-            totalPrice: materialTotal
-          });
-        }
-
-        processedItems.push({
-          title: item.title || 'Quotation Item',
-          notes: item.notes || '',
-          materials: processedMaterials,
-          subtotal: itemSubtotal
-        });
-
-        grandTotal += itemSubtotal;
-      }
-
-      quotation.items = processedItems;
-      quotation.grandTotal = grandTotal;
-    }
-
-    // Update estimate if provided
-    if (estimate) {
-      let parsedEstimate = typeof estimate === 'string' ? JSON.parse(estimate) : estimate;
-      quotation.estimate = {
-        low: parseFloat(parsedEstimate.low) || 0,
-        medium: parseFloat(parsedEstimate.medium) || 0,
-        high: parseFloat(parsedEstimate.high) || 0
-      };
-    }
-
-    // Update other fields
-    if (validUntil) quotation.validUntil = validUntil;
-    if (status) quotation.status = status;
-
-    // Handle new images if uploaded
-    if (req.files && req.files.length > 0) {
-      req.files.forEach((file, index) => {
-        const imageUrl = `/uploads/quotations/${file.filename}`;
-        
-        quotation.images.push({
-          url: imageUrl,
-          filename: file.filename,
-          description: req.body[`imageDescription_${index}`] || '',
-          uploadedAt: new Date()
-        });
-      });
-    }
-
-    await quotation.save();
-
-    res.status(200).json({
-      success: true,
-      message: "Quotation updated successfully",
-      data: quotation
-    });
-
-  } catch (error) {
-    console.error("❌ Error updating quotation:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
-};
-
-// ✅ DELETE IMAGE FROM QUOTATION
-export const deleteQuotationImage = async (req, res) => {
-  try {
-    const { quotationId, imageId } = req.params;
-
-    const quotation = await Quotation.findById(quotationId);
-
-    if (!quotation) {
-      return res.status(404).json({
-        success: false,
-        message: "Quotation not found"
-      });
-    }
-
-    // Check authorization
-    if (quotation.createdBy.toString() !== req.admin._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: "Not authorized"
-      });
-    }
-
-    // Find and remove image
-    const imageIndex = quotation.images.findIndex(img => img._id.toString() === imageId);
-    
-    if (imageIndex === -1) {
-      return res.status(404).json({
-        success: false,
-        message: "Image not found"
-      });
-    }
-
-    // Delete file from filesystem
-    const image = quotation.images[imageIndex];
-    const imagePath = path.join(__dirname, '../../', image.url);
-    
-    if (fs.existsSync(imagePath)) {
-      fs.unlinkSync(imagePath);
-    }
-
-    // Remove from array
-    quotation.images.splice(imageIndex, 1);
-    await quotation.save();
-
-    res.status(200).json({
-      success: true,
-      message: "Image deleted successfully"
-    });
-
-  } catch (error) {
-    console.error("❌ Error deleting image:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
-};
-
-// ✅ GET ALL QUOTATIONS
-export const getAllQuotations = async (req, res) => {
-  try {
-    const adminId = req.admin._id;
-
-    const quotations = await Quotation.find({ createdBy: adminId })
-      .populate('customer', 'name phone')
-      .sort({ createdAt: -1 });
-
-    res.status(200).json({
-      success: true,
-      count: quotations.length,
-      data: quotations
-    });
-
-  } catch (error) {
-    console.error("❌ Error fetching quotations:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
-};
-
-// ✅ GET QUOTATION BY ID
-export const getQuotationById = async (req, res) => {
-  try {
-    const quotation = await Quotation.findById(req.params.id)
-      .populate('customer', 'name phone address');
-
-    if (!quotation) {
-      return res.status(404).json({
-        success: false,
-        message: "Quotation not found"
-      });
-    }
-
-    // Check authorization
-    if (quotation.createdBy.toString() !== req.admin._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: "Not authorized to access this quotation"
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      data: quotation
-    });
-
-  } catch (error) {
-    console.error("❌ Error fetching quotation:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
-};
-
-// ✅ DELETE QUOTATION
-export const deleteQuotation = async (req, res) => {
-  try {
-    const quotation = await Quotation.findById(req.params.id);
-
-    if (!quotation) {
-      return res.status(404).json({
-        success: false,
-        message: "Quotation not found"
-      });
-    }
-
-    // Check authorization
-    if (quotation.createdBy.toString() !== req.admin._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: "Not authorized to delete this quotation"
-      });
-    }
-
-    // Delete associated images from filesystem
-    if (quotation.images && quotation.images.length > 0) {
-      quotation.images.forEach(image => {
-        const imagePath = path.join(__dirname, '../../', image.url);
-        if (fs.existsSync(imagePath)) {
-          fs.unlinkSync(imagePath);
-        }
-      });
-    }
-
-    await quotation.deleteOne();
-
-    // Update customer's quotation count
-    await QuotationCustomer.findByIdAndUpdate(quotation.customer, {
-      $inc: { totalQuotations: -1 }
-    });
-
-    res.status(200).json({
-      success: true,
-      message: "Quotation deleted successfully"
-    });
-
-  } catch (error) {
-    console.error("❌ Error deleting quotation:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
-};
-
-// ✅ UPDATE QUOTATION STATUS
-export const updateQuotationStatus = async (req, res) => {
-  try {
-    const { status } = req.body;
-
-    const validStatuses = ['draft', 'sent', 'accepted', 'rejected', 'expired'];
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid status value"
-      });
-    }
-
-    const quotation = await Quotation.findById(req.params.id);
-
-    if (!quotation) {
-      return res.status(404).json({
-        success: false,
-        message: "Quotation not found"
-      });
-    }
-
-    // Check authorization
-    if (quotation.createdBy.toString() !== req.admin._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: "Not authorized to update this quotation"
-      });
-    }
-
-    quotation.status = status;
-    await quotation.save();
-
-    res.status(200).json({
-      success: true,
-      message: "Quotation status updated successfully",
-      data: quotation
-    });
-
-  } catch (error) {
-    console.error("❌ Error updating quotation status:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
-};
-
-// ✅ GET QUOTATIONS BY CUSTOMER
-export const getQuotationsByCustomer = async (req, res) => {
-  try {
-    const adminId = req.admin._id;
-
-    const quotations = await Quotation.find({
-      createdBy: adminId,
-      customer: req.params.customerId
-    })
-    .sort({ createdAt: -1 });
-
-    res.status(200).json({
-      success: true,
-      count: quotations.length,
-      data: quotations
-    });
-
-  } catch (error) {
-    console.error("❌ Error fetching customer quotations:", error);
     res.status(500).json({
       success: false,
       message: error.message

@@ -1,4 +1,5 @@
-// یہ بیک اینڈ پر pages کی list ہوگی
+// backend/constants/pages.js
+
 export const PAGES = [
   // Dashboard Pages
   { 
@@ -45,6 +46,12 @@ export const PAGES = [
     path: '/Customer-Detail/:id',
     category: 'customers'
   },
+  { 
+    id: 'customer-orders', 
+    name: 'Customer Orders', 
+    path: '/customer-orders/:id',
+    category: 'customers'
+  },
   
   // Order Pages
   { 
@@ -57,12 +64,6 @@ export const PAGES = [
     id: 'role-orders', 
     name: 'Role Orders', 
     path: '/role-orders',
-    category: 'orders'
-  },
-  { 
-    id: 'customer-orders', 
-    name: 'Customer Orders', 
-    path: '/customer-orders/:id',
     category: 'orders'
   },
   
@@ -129,6 +130,12 @@ export const PAGES = [
     id: 'all-quotations', 
     name: 'All Quotations', 
     path: '/all-Quotation',
+    category: 'quotations'
+  },
+  { 
+    id: 'role-quotations', 
+    name: 'Role Quotations', 
+    path: '/role-quotations',
     category: 'quotations'
   },
   
@@ -211,7 +218,7 @@ export const PAGES = [
   }
 ];
 
-// بیک اینڈ پر بھی categories
+// Categories
 export const PAGE_CATEGORIES = {
   dashboard: {
     name: 'Dashboard',
@@ -219,11 +226,11 @@ export const PAGE_CATEGORIES = {
   },
   customers: {
     name: 'Customer Management',
-    pages: ['add-customer', 'all-customers', 'role-add-customer', 'role-customers', 'customer-detail']
+    pages: ['add-customer', 'all-customers', 'role-add-customer', 'role-customers', 'customer-detail', 'customer-orders']
   },
   orders: {
     name: 'Order Management',
-    pages: ['all-orders', 'role-orders', 'customer-orders']
+    pages: ['all-orders', 'role-orders']
   },
   labor: {
     name: 'Labor Management',
@@ -235,7 +242,7 @@ export const PAGE_CATEGORIES = {
   },
   quotations: {
     name: 'Quotations',
-    pages: ['quotation-customer', 'all-quotations']
+    pages: ['quotation-customer', 'all-quotations', 'role-quotations']
   },
   material: {
     name: 'Material',
@@ -254,4 +261,14 @@ export const PAGE_CATEGORIES = {
 // Helper function
 export const getPageById = (pageId) => {
   return PAGES.find(page => page.id === pageId);
+};
+
+// Get pages by category
+export const getPagesByCategory = (category) => {
+  return PAGES.filter(page => page.category === category);
+};
+
+// Get all page IDs
+export const getAllPageIds = () => {
+  return PAGES.map(page => page.id);
 };

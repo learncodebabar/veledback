@@ -1,3 +1,4 @@
+// backend/controllers/quotationCustomerController.js
 import QuotationCustomer from "../models/quotationCustomer.js";
 import Quotation from "../models/quotation.js";
 
@@ -5,6 +6,21 @@ import Quotation from "../models/quotation.js";
 export const createQuotationCustomer = async (req, res) => {
   try {
     console.log("📝 Creating quotation customer:", req.body);
+
+    // Validate required fields
+    if (!req.body.name || !req.body.name.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Customer name is required"
+      });
+    }
+
+    if (!req.body.phone || !req.body.phone.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Phone number is required"
+      });
+    }
 
     // Check if customer exists with same phone
     const existingCustomer = await QuotationCustomer.findOne({ 
@@ -22,15 +38,15 @@ export const createQuotationCustomer = async (req, res) => {
     const adminId = req.admin._id;
     const adminName = req.admin.name;
 
-    // Create new customer - this will work with any fields sent
-    // Fields not sent will use default values from schema
+    // Create new customer
     const customer = await QuotationCustomer.create({
-      name: req.body.name,
-      phone: req.body.phone,
-      address: req.body.address || "", // Optional field
-      // All other fields will use their defaults
+      name: req.body.name.trim(),
+      phone: req.body.phone.trim(),
+      address: req.body.address ? req.body.address.trim() : "",
       createdBy: adminId,
-      createdByAdmin: adminName
+      createdByAdmin: adminName,
+      isActive: true,
+      totalQuotations: 0
     });
 
     res.status(201).json({
@@ -59,7 +75,7 @@ export const createQuotationCustomer = async (req, res) => {
 
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message || "Error creating quotation customer"
     });
   }
 };
@@ -99,7 +115,7 @@ export const getAllQuotationCustomers = async (req, res) => {
     console.error("❌ Error fetching quotation customers:", error);
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message || "Error fetching quotation customers"
     });
   }
 };
@@ -107,7 +123,9 @@ export const getAllQuotationCustomers = async (req, res) => {
 // ✅ Get Single Quotation Customer
 export const getQuotationCustomerById = async (req, res) => {
   try {
-    const customer = await QuotationCustomer.findById(req.params.id);
+    const { id } = req.params;
+    
+    const customer = await QuotationCustomer.findById(id);
 
     if (!customer) {
       return res.status(404).json({
@@ -140,7 +158,7 @@ export const getQuotationCustomerById = async (req, res) => {
     console.error("❌ Error fetching quotation customer:", error);
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message || "Error fetching quotation customer"
     });
   }
 };
@@ -148,7 +166,8 @@ export const getQuotationCustomerById = async (req, res) => {
 // ✅ Update Quotation Customer
 export const updateQuotationCustomer = async (req, res) => {
   try {
-    const customer = await QuotationCustomer.findById(req.params.id);
+    const { id } = req.params;
+    const customer = await QuotationCustomer.findById(id);
 
     if (!customer) {
       return res.status(404).json({
@@ -179,19 +198,18 @@ export const updateQuotationCustomer = async (req, res) => {
       }
     }
 
-    // Prepare update data - only include fields that are sent
+    // Prepare update data
     const updateData = {};
     
-    if (req.body.name !== undefined) updateData.name = req.body.name;
-    if (req.body.phone !== undefined) updateData.phone = req.body.phone;
-    if (req.body.address !== undefined) updateData.address = req.body.address;
-    
-    // Add updatedBy
+    if (req.body.name !== undefined) updateData.name = req.body.name.trim();
+    if (req.body.phone !== undefined) updateData.phone = req.body.phone.trim();
+    if (req.body.address !== undefined) updateData.address = req.body.address.trim();
     updateData.updatedBy = req.admin._id;
+    updateData.updatedAt = new Date();
 
     // Update customer
     const updatedCustomer = await QuotationCustomer.findByIdAndUpdate(
-      req.params.id,
+      id,
       updateData,
       { new: true, runValidators: true }
     );
@@ -222,7 +240,7 @@ export const updateQuotationCustomer = async (req, res) => {
 
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message || "Error updating quotation customer"
     });
   }
 };
@@ -230,7 +248,8 @@ export const updateQuotationCustomer = async (req, res) => {
 // ✅ Delete Quotation Customer (Soft Delete)
 export const deleteQuotationCustomer = async (req, res) => {
   try {
-    const customer = await QuotationCustomer.findById(req.params.id);
+    const { id } = req.params;
+    const customer = await QuotationCustomer.findById(id);
 
     if (!customer) {
       return res.status(404).json({
@@ -275,7 +294,7 @@ export const deleteQuotationCustomer = async (req, res) => {
     console.error("❌ Error deleting quotation customer:", error);
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message || "Error deleting quotation customer"
     });
   }
 };
@@ -286,7 +305,7 @@ export const searchQuotationCustomers = async (req, res) => {
     const { query } = req.query;
     const adminId = req.admin._id;
 
-    if (!query) {
+    if (!query || query.trim() === "") {
       return res.status(400).json({
         success: false,
         message: "Search query is required"
@@ -313,7 +332,7 @@ export const searchQuotationCustomers = async (req, res) => {
     console.error("❌ Error searching quotation customers:", error);
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message || "Error searching quotation customers"
     });
   }
 };
@@ -337,6 +356,7 @@ export const updateQuotationStats = async (customerId) => {
     console.error("❌ Error updating quotation stats:", error);
   }
 };
+
 // ✅ Get Quotation Customer by Phone Number
 export const getQuotationCustomerByPhone = async (req, res) => {
   try {
@@ -344,6 +364,13 @@ export const getQuotationCustomerByPhone = async (req, res) => {
     const adminId = req.admin._id;
 
     console.log(`🔍 Searching for customer with phone: ${phone}`);
+
+    if (!phone || phone.trim() === "") {
+      return res.status(400).json({
+        success: false,
+        message: "Phone number is required"
+      });
+    }
 
     // Clean phone number (remove special characters)
     const cleanPhone = phone.replace(/\D/g, '');
@@ -379,7 +406,7 @@ export const getQuotationCustomerByPhone = async (req, res) => {
     console.error("❌ Error fetching customer by phone:", error);
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message || "Error fetching customer by phone"
     });
   }
 };

@@ -2,32 +2,21 @@ import Role from "../models/Role.js";
 import jwt from "jsonwebtoken";
 import nodemailer from "nodemailer";
 import crypto from "crypto";
-
-
 import dotenv from "dotenv";
+
 dotenv.config();
-// Store OTPs temporarily (in production, use Redis)
+
+// Store OTPs temporarily
 const otpStore = new Map();
 
-// const transporter = nodemailer.createTransport({
-//   service: "gmail",
-//   auth: {
-//     user: process.env.EMAIL_USER,
-//     pass: process.env.EMAIL_PASS
-//   }
-// });
-// TEMPORARY TESTING ONLY - Remove in production
-
- const  MyEmail = process.env.EMAIL_USER
- const  MyPassword=  process.env.EMAIL_PASS
-// const MyPassword =process.env.EMAIL_PASS
-
+const MyEmail = process.env.EMAIL_USER;
+const MyPassword = process.env.EMAIL_PASS;
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: MyEmail,
-    pass: MyPassword 
+    pass: MyPassword
   }
 });
 
@@ -47,13 +36,13 @@ const generateOTP = () => {
 };
 
 // ======================
-// Send OTP Email (Gmail Inbox)
+// Send OTP Email
 // ======================
 const sendOTPEmail = async (email, otp) => {
   const mailOptions = {
     from: `"ERP System" <${process.env.EMAIL_USER}>`,
     to: email,
-    subject: ' Your Login OTP - Role Dashboard',
+    subject: 'Your Login OTP - Role Dashboard',
     html: `
       <!DOCTYPE html>
       <html>
@@ -63,66 +52,39 @@ const sendOTPEmail = async (email, otp) => {
       </head>
       <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f4f6f9;">
         <div style="max-width: 600px; margin: 20px auto; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.1);">
-          
-          <!-- Header -->
           <div style="background: linear-gradient(135deg, #667eea 0%); padding: 30px; text-align: center;">
-            <h1 style="color: white; margin: 0; font-size: 28px;"> Role Dashboard</h1>
+            <h1 style="color: white; margin: 0; font-size: 28px;">Role Dashboard</h1>
             <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0; font-size: 16px;">Login Verification</p>
           </div>
-          
-          <!-- Body -->
           <div style="padding: 40px 30px;">
             <h2 style="color: #333; margin-top: 0; font-size: 24px;">Hello!</h2>
             <p style="color: #666; line-height: 1.6; font-size: 16px;">
               You requested to login to your Role Dashboard. Use the following OTP to complete your login:
             </p>
-            
-            <!-- OTP Box -->
             <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 25px; border-radius: 12px; text-align: center; margin: 30px 0;">
               <div style="font-size: 48px; font-weight: bold; letter-spacing: 10px; color: white; font-family: monospace;">
                 ${otp}
               </div>
             </div>
-            
             <div style="background: #f8f9fa; border-left: 4px solid #667eea; padding: 15px; margin: 20px 0;">
               <p style="color: #555; margin: 0; font-size: 14px;">
-                <strong> Valid for:</strong> 5 minutes<br>
-                <strong> Security:</strong> Never share this OTP with anyone
+                <strong>Valid for:</strong> 5 minutes<br>
+                <strong>Security:</strong> Never share this OTP with anyone
               </p>
             </div>
-            
-            <p style="color: #888; font-size: 14px; line-height: 1.6; margin-top: 30px;">
-              If you didn't request this login, please ignore this email or contact support immediately.
-            </p>
           </div>
-          
-          <!-- Footer -->
           <div style="background: #f4f6f9; padding: 20px; text-align: center; border-top: 1px solid #e0e4e9;">
-            <p style="color: #999; margin: 0; font-size: 12px;">
-              This is an automated message, please do not reply to this email.
-            </p>
-            <p style="color: #999; margin: 5px 0 0; font-size: 12px;">
-              &copy; 2025 ERP System. All rights reserved.
-            </p>
+            <p style="color: #999; margin: 0; font-size: 12px;">&copy; 2025 ERP System. All rights reserved.</p>
           </div>
         </div>
       </body>
       </html>
     `,
-    // Plain text version for email clients that don't support HTML
-    text: `
-      Your Login OTP: ${otp}
-      
-      Valid for 5 minutes.
-      Never share this OTP with anyone.
-      
-      If you didn't request this login, please ignore this email.
-    `
+    text: `Your Login OTP: ${otp}\n\nValid for 5 minutes.\nNever share this OTP with anyone.`
   };
 
   try {
     const info = await transporter.sendMail(mailOptions);
-   
     return info;
   } catch (error) {
     console.error('❌ Failed to send email:', error);
@@ -137,8 +99,6 @@ export const sendOtp = async (req, res) => {
   try {
     const { email, password } = req.body;
     
-    
-    // Find role by email
     const role = await Role.findOne({ email });
     
     if (!role) {
@@ -148,7 +108,6 @@ export const sendOtp = async (req, res) => {
       });
     }
     
-    // Check if role is active
     if (role.status !== 'Active') {
       return res.status(400).json({
         success: false,
@@ -156,7 +115,6 @@ export const sendOtp = async (req, res) => {
       });
     }
     
-    // Verify password
     const isPasswordValid = await role.comparePassword(password);
     if (!isPasswordValid) {
       return res.status(400).json({ 
@@ -165,11 +123,9 @@ export const sendOtp = async (req, res) => {
       });
     }
     
-    // Generate OTP
     const otp = generateOTP();
-    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
+    const expiresAt = Date.now() + 5 * 60 * 1000;
     
-    // Store OTP
     otpStore.set(email, {
       otp,
       expiresAt,
@@ -177,9 +133,7 @@ export const sendOtp = async (req, res) => {
       attempts: 0
     });
     
-    // Send OTP via email (Gmail Inbox)
     await sendOTPEmail(email, otp);
-    
     
     res.json({
       success: true,
@@ -190,15 +144,12 @@ export const sendOtp = async (req, res) => {
     
   } catch (err) {
     console.error("❌ Error sending OTP:", err);
-    
-    // More detailed error message
     let errorMessage = err.message;
     if (err.code === 'EAUTH') {
       errorMessage = 'Email authentication failed. Please check your Gmail credentials.';
     } else if (err.code === 'ESOCKET') {
       errorMessage = 'Network error. Please check your internet connection.';
     }
-    
     res.status(500).json({ 
       success: false, 
       message: errorMessage
@@ -207,14 +158,12 @@ export const sendOtp = async (req, res) => {
 };
 
 // ======================
-// Verify OTP and Login
+// ✅ FIXED: Verify OTP and Login (WITH PERMISSIONS ARRAY)
 // ======================
 export const verifyOtpAndLogin = async (req, res) => {
   try {
     const { email, otp, userId } = req.body;
     
-    
-    // Get OTP from store
     const otpData = otpStore.get(email);
     
     if (!otpData) {
@@ -224,7 +173,6 @@ export const verifyOtpAndLogin = async (req, res) => {
       });
     }
     
-    // Check attempts
     if (otpData.attempts >= 3) {
       otpStore.delete(email);
       return res.status(400).json({
@@ -233,7 +181,6 @@ export const verifyOtpAndLogin = async (req, res) => {
       });
     }
     
-    // Check expiry
     if (Date.now() > otpData.expiresAt) {
       otpStore.delete(email);
       return res.status(400).json({
@@ -242,18 +189,15 @@ export const verifyOtpAndLogin = async (req, res) => {
       });
     }
     
-    // Verify OTP
     if (otpData.otp !== otp) {
       otpData.attempts += 1;
       otpStore.set(email, otpData);
-      
       return res.status(400).json({
         success: false,
         message: `Invalid OTP. ${3 - otpData.attempts} attempts remaining`
       });
     }
     
-    // Find role
     const role = await Role.findById(otpData.roleId);
     
     if (!role) {
@@ -263,11 +207,16 @@ export const verifyOtpAndLogin = async (req, res) => {
       });
     }
     
-    // Update last login
     role.lastLogin = new Date();
     await role.save();
     
-    // Generate JWT token
+    // ✅ CRITICAL: Get permissions array from role
+    const permissionsArray = role.permissions || [];
+    
+    console.log('✅ Role logged in:', role.email);
+    console.log('📦 Permissions Array from DB:', permissionsArray);
+    console.log('📦 Role Type:', role.role);
+    
     const token = jwt.sign(
       { 
         id: role._id, 
@@ -277,13 +226,12 @@ export const verifyOtpAndLogin = async (req, res) => {
         type: 'role'
       },
       process.env.JWT_SECRET,
-      { expiresIn: "1d" }
+      { expiresIn: "30d" }
     );
     
-    // Clear OTP from store
     otpStore.delete(email);
     
-    
+    // ✅ Return permissions array in response
     res.json({
       success: true,
       message: "Login successful",
@@ -293,11 +241,14 @@ export const verifyOtpAndLogin = async (req, res) => {
         name: role.name,
         email: role.email,
         role: role.role,
-        type: 'role'
+        status: role.status,
+        type: 'role',
+        permissionsArray: permissionsArray  // ✅ YAHAN SE ARRAY JAYEGA
       }
     });
     
   } catch (err) {
+    console.error("❌ Login error:", err);
     res.status(500).json({ 
       success: false, 
       message: err.message 
@@ -314,7 +265,6 @@ export const resendOtp = async (req, res) => {
     
     console.log("📝 Resending OTP for:", email);
     
-    // Check if exists in store
     const existingOtp = otpStore.get(email);
     
     if (!existingOtp) {
@@ -324,11 +274,9 @@ export const resendOtp = async (req, res) => {
       });
     }
     
-    // Generate new OTP
     const otp = generateOTP();
     const expiresAt = Date.now() + 5 * 60 * 1000;
     
-    // Update store
     otpStore.set(email, {
       otp,
       expiresAt,
@@ -336,7 +284,6 @@ export const resendOtp = async (req, res) => {
       attempts: 0
     });
     
-    // Send new OTP
     await sendOTPEmail(email, otp);
     
     console.log(`✅ OTP resent to ${email}`);
@@ -373,7 +320,6 @@ export const roleLogin = async (req, res) => {
       });
     }
     
-    // Check if role is active
     if (role.status !== 'Active') {
       return res.status(400).json({
         success: false,
@@ -381,7 +327,6 @@ export const roleLogin = async (req, res) => {
       });
     }
     
-    // Verify password
     const isPasswordValid = await role.comparePassword(password);
     if (!isPasswordValid) {
       return res.status(400).json({ 
@@ -390,11 +335,9 @@ export const roleLogin = async (req, res) => {
       });
     }
     
-    // Update last login
     role.lastLogin = new Date();
     await role.save();
     
-    // Generate JWT token
     const token = jwt.sign(
       { 
         id: role._id, 
@@ -407,6 +350,9 @@ export const roleLogin = async (req, res) => {
       { expiresIn: "1d" }
     );
     
+    // ✅ Also add permissions array here for traditional login
+    const permissionsArray = role.permissions || [];
+    
     console.log("✅ Traditional login successful for:", email);
     
     res.json({
@@ -418,7 +364,8 @@ export const roleLogin = async (req, res) => {
         name: role.name,
         email: role.email,
         role: role.role,
-        type: 'role'
+        type: 'role',
+        permissionsArray: permissionsArray
       }
     });
     
@@ -440,7 +387,6 @@ export const createRole = async (req, res) => {
     
     const { name, email, password, role, permissions } = req.body;
     
-    // Validation
     if (!name || !email || !password) {
       return res.status(400).json({ 
         success: false,
@@ -448,7 +394,6 @@ export const createRole = async (req, res) => {
       });
     }
     
-    // Check if email already exists
     const existingRole = await Role.findOne({ email });
     if (existingRole) {
       return res.status(400).json({ 
@@ -457,7 +402,6 @@ export const createRole = async (req, res) => {
       });
     }
     
-    // Create new role
     const newRole = new Role({
       name,
       email,
@@ -467,7 +411,6 @@ export const createRole = async (req, res) => {
       createdBy: req.admin?.id
     });
     
-    // Save to database
     const savedRole = await newRole.save();
     
     console.log("✅ Role created successfully:", savedRole.email);
@@ -481,20 +424,19 @@ export const createRole = async (req, res) => {
         email: savedRole.email,
         role: savedRole.role,
         status: savedRole.status,
+        permissionsArray: savedRole.permissions,
         createdAt: savedRole.createdAt
       }
     });
     
   } catch (err) {
     console.error("❌ Error creating role:", err);
-    
     if (err.code === 11000) {
       return res.status(400).json({ 
         success: false,
         message: "Email already exists" 
       });
     }
-    
     res.status(500).json({ 
       success: false,
       message: "Server error: " + err.message 
@@ -509,9 +451,14 @@ export const getAllRoles = async (req, res) => {
   try {
     const roles = await Role.find({}).select('-password').sort({ createdAt: -1 });
     
+    const rolesWithPermissions = roles.map(role => ({
+      ...role.toObject(),
+      permissionsArray: role.permissions || []
+    }));
+    
     res.json({
       success: true,
-      roles
+      roles: rolesWithPermissions
     });
     
   } catch (err) {
@@ -541,7 +488,16 @@ export const getRoleById = async (req, res) => {
     
     res.json({
       success: true,
-      role
+      role: {
+        id: role._id,
+        name: role.name,
+        email: role.email,
+        role: role.role,
+        status: role.status,
+        permissionsArray: role.permissions || [],
+        createdAt: role.createdAt,
+        updatedAt: role.updatedAt
+      }
     });
     
   } catch (err) {
@@ -570,12 +526,11 @@ export const updateRole = async (req, res) => {
       });
     }
     
-    // Update fields
     if (name) existingRole.name = name;
     if (email) existingRole.email = email;
     if (role) existingRole.role = role;
     if (status) existingRole.status = status;
-    if (permissions) existingRole.permissions = permissions;
+    if (permissions !== undefined) existingRole.permissions = permissions;
     
     await existingRole.save();
     
@@ -587,20 +542,19 @@ export const updateRole = async (req, res) => {
         name: existingRole.name,
         email: existingRole.email,
         role: existingRole.role,
-        status: existingRole.status
+        status: existingRole.status,
+        permissionsArray: existingRole.permissions
       }
     });
     
   } catch (err) {
     console.error("❌ Error updating role:", err);
-    
     if (err.code === 11000) {
       return res.status(400).json({ 
         success: false,
         message: "Email already exists" 
       });
     }
-    
     res.status(500).json({ 
       success: false,
       message: "Server error: " + err.message 
