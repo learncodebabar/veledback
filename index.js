@@ -35,7 +35,14 @@ const app = express();
 // ✅ یہ پہلے لگائیں (static files serve کرنے سے پہلے)
 app.use(express.json());
 
-app.use(cors({ origin: process.env.CLIENT_URL, credentials: true }));
+app.use(cors({
+  origin: [
+    "https://veledfront.vercel.app",
+    "http://localhost:5173"
+  ],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  credentials: true
+}));
 
 
 
