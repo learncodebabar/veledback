@@ -3,19 +3,22 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Create transporter
+// Create transporter - FIXED with TLS configuration
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
+    pass: process.env.EMAIL_PASS,
+  },
+  tls: {
+    rejectUnauthorized: false  // ✅ THIS FIXES THE CERTIFICATE ERROR
   }
 });
 
 // Verify connection configuration
 transporter.verify(function(error, success) {
   if (error) {
-    console.log('❌ Email server error:', error);
+    console.log('❌ Email server error:', error.message);
   } else {
     console.log('✅ Email server is ready to send messages');
   }
@@ -326,15 +329,15 @@ export const sendWeeklySummary = async (adminEmail, adminName, summary) => {
                           ${upcomingProjects.length === 0 ? `
                             <p style="color: #6B7280; text-align: center; margin: 20px 0;">No upcoming deadlines this week</p>
                           ` : ''}
-                        </td>
-                      </tr>
+                         </td>
+                       </tr>
                     </table>
                     
                     <!-- View All Button -->
                     <table width="100%" cellpadding="0" cellspacing="0" border="0">
                       <tr>
                         <td align="center" style="padding: 20px 0;">
-                          <a href="${process.env.FRONTEND_URL}/all-customers" style="display: inline-block; background-color: #3B82F6; color: #FFFFFF; padding: 12px 32px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 15px;">View All Projects</a>
+                          <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/all-customers" style="display: inline-block; background-color: #3B82F6; color: #FFFFFF; padding: 12px 32px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 15px;">View All Projects</a>
                         </td>
                       </tr>
                     </table>
